@@ -1,6 +1,6 @@
 {
   "name": "project-tracker",
-  "version": "7.5.15",
+  "version": "1.0.0",
   "description": "Project Tracker - Task Management System with Gantt Chart",
   "scripts": {
     "build": "node scripts/build.js",
