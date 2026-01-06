@@ -101,6 +101,8 @@ function apiDispatcher(action, payload = {}) {
         return updateTaskParent(payload);
       case 'batchUpdateTasks':
         return batchUpdateTasks(payload);
+      case 'parseMarkdownWBS':
+        return parseMarkdownWBS(payload);
       
       default:
         return { success: false, error: `Unknown action: ${action}` };
@@ -990,6 +992,154 @@ function batchUpdateTasks(payload) {
     };
   } catch (error) {
     Logger.log(`❌ batchUpdateTasks error: ${error}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Parse WBS Markdown format to task structure
+ * @param {Object} payload - { markdownText: string }
+ * @returns {Object} { success: boolean, data: { tree: [], flatList: [] } }
+ */
+function parseMarkdownWBS(payload) {
+  try {
+    const { markdownText } = payload;
+    if (!markdownText) {
+      return { success: false, error: 'No markdown text provided' };
+    }
+    
+    const lines = markdownText.split('\n');
+    const tree = [];
+    const flatList = [];
+    
+    let currentEpic = null;
+    let currentStory = null;
+    let taskId = 1;
+    
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      
+      // Epic: # Epic: 名稱
+      if (trimmed.startsWith('# Epic:') || trimmed.startsWith('#Epic:')) {
+        const name = trimmed.replace(/^#\s*Epic:\s*/i, '').trim();
+        currentEpic = {
+          id: `E${taskId++}`,
+          task: name,
+          nodeType: 'Epic',
+          level: 0,
+          children: []
+        };
+        tree.push(currentEpic);
+        flatList.push({ ...currentEpic, children: undefined });
+        currentStory = null;
+      }
+      // Story: ## Story: 名稱
+      else if (trimmed.startsWith('## Story:') || trimmed.startsWith('##Story:')) {
+        const name = trimmed.replace(/^##\s*Story:\s*/i, '').trim();
+        currentStory = {
+          id: `S${taskId++}`,
+          task: name,
+          nodeType: 'Story',
+          level: 1,
+          parentId: currentEpic ? currentEpic.id : null,
+          children: []
+        };
+        if (currentEpic) {
+          currentEpic.children.push(currentStory);
+        } else {
+          tree.push(currentStory);
+        }
+        flatList.push({ ...currentStory, children: undefined });
+      }
+      // Task: - [ ] 任務名稱 (負責人) [StartDate ~ EndDate] #T:Team #P:Priority
+      else if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]')) {
+        const isDone = trimmed.startsWith('- [x]');
+        let taskText = trimmed.replace(/^-\s*\[[x ]\]\s*/i, '');
+        
+        // Parse owner: (負責人)
+        let owner = '';
+        const ownerMatch = taskText.match(/\(([^)]+)\)/);
+        if (ownerMatch) {
+          owner = ownerMatch[1];
+          taskText = taskText.replace(ownerMatch[0], '').trim();
+        }
+        
+        // Parse dates: [StartDate ~ EndDate]
+        let startDate = '';
+        let endDate = '';
+        const dateMatch = taskText.match(/\[([^\]]+)\]/);
+        if (dateMatch) {
+          const dateStr = dateMatch[1];
+          const dateParts = dateStr.split('~').map(s => s.trim());
+          startDate = dateParts[0] || '';
+          endDate = dateParts[1] || dateParts[0] || '';
+          taskText = taskText.replace(dateMatch[0], '').trim();
+        }
+        
+        // Parse team: #T:Team
+        let team = '';
+        const teamMatch = taskText.match(/#T:(\S+)/);
+        if (teamMatch) {
+          team = teamMatch[1];
+          taskText = taskText.replace(teamMatch[0], '').trim();
+        }
+        
+        // Parse priority: #P:Priority
+        let priority = 'Medium';
+        const priorityMatch = taskText.match(/#P:(\S+)/);
+        if (priorityMatch) {
+          const p = priorityMatch[1].toLowerCase();
+          priority = p === '高' || p === 'high' ? 'High' : 
+                    p === '低' || p === 'low' ? 'Low' : 'Medium';
+          taskText = taskText.replace(priorityMatch[0], '').trim();
+        }
+        
+        // Parse dependency: #depends:TaskName
+        let dependency = '';
+        const depMatch = taskText.match(/#depends?:(\S+)/i);
+        if (depMatch) {
+          dependency = depMatch[1];
+          taskText = taskText.replace(depMatch[0], '').trim();
+        }
+        
+        const taskNode = {
+          id: `T${taskId++}`,
+          task: taskText.trim(),
+          nodeType: 'Task',
+          level: currentStory ? 2 : (currentEpic ? 1 : 0),
+          owner: owner,
+          startDate: startDate,
+          date: endDate,
+          team: team,
+          priority: priority,
+          dependency: dependency,
+          status: isDone ? 'Done' : 'Todo',
+          parentId: currentStory ? currentStory.id : (currentEpic ? currentEpic.id : null),
+          children: []
+        };
+        
+        if (currentStory) {
+          currentStory.children.push(taskNode);
+        } else if (currentEpic) {
+          currentEpic.children.push(taskNode);
+        } else {
+          tree.push(taskNode);
+        }
+        flatList.push({ ...taskNode, children: undefined });
+      }
+    });
+    
+    return {
+      success: true,
+      data: {
+        tree: tree,
+        flatList: flatList
+      },
+      count: flatList.length
+    };
+  } catch (error) {
+    Logger.log(`❌ parseMarkdownWBS error: ${error}`);
     return { success: false, error: error.toString() };
   }
 }
