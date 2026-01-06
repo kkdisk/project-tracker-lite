@@ -1132,10 +1132,7 @@ function parseMarkdownWBS(payload) {
     
     return {
       success: true,
-      data: {
-        tree: tree,
-        flatList: flatList
-      },
+      tasks: flatList,
       count: flatList.length
     };
   } catch (error) {
