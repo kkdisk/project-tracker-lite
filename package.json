@@ -1,0 +1,16 @@
+{
+  "name": "project-tracker",
+  "version": "7.5.15",
+  "description": "Project Tracker - Task Management System with Gantt Chart",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "watch": "node scripts/build.js --watch",
+    "dev": "python -m http.server 8000"
+  },
+  "devDependencies": {
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

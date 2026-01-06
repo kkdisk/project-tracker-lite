@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build Output
+# build/
+
+# Temporary & Cache
+temp_data/
+.cache/
+*.log
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Backup Files
+*.bak
+*_backup.*
+
+# Sensitive Configuration (DO NOT commit)
+src/js/config.js
+config.js

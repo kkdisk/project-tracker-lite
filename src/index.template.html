@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Tracker v7.6.0</title>
+    <!-- GAS Hosted Config Injection -->
+    <? if (typeof ScriptApp !== 'undefined') { ?>
+    <script>
+        window.GAS_API_URL = "<?= ScriptApp.getService().getUrl() ?>";
+    </script>
+    <? } ?>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            safelist: [
+                'bg-rose-50', 'bg-rose-50/50', 'border-rose-500', 'bg-rose-100', 'text-rose-700',
+                'bg-red-50', 'hover:bg-red-50/30', 'border-red-500', 'bg-red-100', 'text-red-700', 'border-red-200',
+                'bg-orange-50', 'bg-orange-50/30', 'border-orange-500', 'bg-orange-100', 'text-orange-700', 'border-orange-200',
+                'bg-yellow-100', 'text-yellow-700', 'border-yellow-200',
+                'border-l-4'
+            ]
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+
+    <!-- Prop Types -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+
+    <!-- Recharts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.10.3/Recharts.min.js"></script>
+
+    <!-- Babel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+    <!-- SheetJS for Excel parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <!-- js-yaml for YAML parsing (WBS Phase 3) -->
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+
+    <!-- marked for Markdown parsing (WBS Phase 3) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Data Converter - 強制重新載入修復後的版本 -->
+    <script src="js/data_converter.js?v=13101322"></script>
+
+    <!-- normalizeDate 函數已統一定義在 helpers.js (第 77-120 行) -->
+
+    <!-- Report Generator for Weekly Reports -->
+    <script src="js/utils/report_generator.js"></script>
+
+    <style>
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        /* Tooltip Styles */
+        .tooltip-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            cursor: help;
+        }
+
+        .tooltip-text {
+            visibility: hidden;
+            width: 250px;
+            background-color: #334155;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 50;
+            bottom: 135%;
+            left: 50%;
+            margin-left: -125px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            pointer-events: none;
+            word-wrap: break-word;
+            white-space: normal;
+        }
+
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Tooltip arrow */
+        .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #334155 transparent transparent transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Gantt Chart Styles */
+        .gantt-wrapper {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .gantt-header-row {
+            flex: 0 0 auto;
+            overflow: hidden;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            z-index: 50;
+        }
+
+        .gantt-header-wrapper {
+            display: flex;
+        }
+
+        .gantt-header-task {
+            flex: 0 0 200px;
+            min-width: 200px;
+            padding: 0 12px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: #475569;
+            border-right: 1px solid #e2e8f0;
+            background: #f8fafc;
+            display: flex;
+            align-items: center;
+            position: sticky;
+            left: 0;
+            z-index: 40;
+            box-shadow: 1px 0 0 #e2e8f0;
+        }
+
+        .gantt-header-timeline {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .gantt-header-month-row {
+            display: flex;
+            height: 30px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .gantt-month-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #475569;
+            border-right: 1px solid #e2e8f0;
+            background: #f1f5f9;
+        }
+
+        .gantt-header-day-row {
+            display: flex;
+            height: 30px;
+        }
+
+        .gantt-day-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: #64748b;
+            border-right: 1px solid #f1f5f9;
+            background: #fff;
+        }
+
+        .gantt-day-cell.is-weekend {
+            background-color: #f8fafc;
+            color: #94a3b8;
+        }
+
+        .gantt-body {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+
+        .gantt-body-content {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .gantt-grid-lines {
+            position: absolute;
+            top: 0;
+            left: 200px;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .gantt-grid-col {
+            height: 100%;
+            border-right: 1px solid #f1f5f9;
+            box-sizing: border-box;
+        }
+
+        .gantt-row {
+            display: flex;
+            height: 40px;
+            border-bottom: 1px solid #f1f5f9;
+            position: relative;
+            z-index: 5;
+        }
+
+        .gantt-row:hover {
+            background-color: #f8fafc;
+        }
+
+        .gantt-task-col {
+            flex: 0 0 200px;
+            min-width: 200px;
+            padding: 0 12px;
+            font-size: 0.875rem;
+            color: #334155;
+            border-right: 1px solid #e2e8f0;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            position: sticky;
+            left: 0;
+            z-index: 35;
+            box-shadow: 1px 0 0 #e2e8f0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .gantt-timeline-col {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .gantt-bar {
+            position: absolute;
+            top: 8px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 0 6px;
+            color: white;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 10;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .gantt-bar:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 25;
+            filter: brightness(1.05);
+        }
+
+        .today-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: #ef4444;
+            z-index: 25;
+            pointer-events: none;
+            box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+        }
+
+        .today-line::after {
+            content: 'Today';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #ef4444;
+            color: white;
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 0 0 4px 4px;
+            white-space: nowrap;
+        }
+
+        .dependency-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Animations */
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .animate-fade-in {
+            animation: fade-in 0.2s ease-out forwards;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script src="js/utils/gas_api.js"></script>
+    <script src="js/config.js"></script>
+    <script type="text/babel" src="js/utils/icons.js"></script>
+    <script type="text/babel" src="js/utils/helpers.js"></script>
+    <script type="text/babel" src="js/components/LoginScreen.js"></script>
+    <script type="text/babel" src="js/components/GanttView.js"></script>
+    <script type="text/babel" src="js/components/CalendarView.js"></script>
+
+    <script type="text/babel" src="js/components/TaskModal.js"></script>
+    <script type="text/babel" src="js/components/ContextMenu.js"></script>
+    <script type="text/babel" src="js/components/SearchInput.js"></script>
+    <script type="text/babel" src="js/components/Dashboard.js"></script>
+    <script type="text/babel" src="js/components/TopicView.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        const { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } = window.Recharts || {};
+
+        // ✅ Task ID部門代碼Mapping (用於未來Task ID升級)
+        const DEPT_CODES = {
+            '晶片': 'CHIP',
+            '機構': 'MECH',
+            '軟體': 'SW',
+            '電控': 'EC',
+            '流道': 'FLOW',
+            '生醫': 'BIO',
+            'QA': 'QA',
+            '管理': 'MGT',
+            'issue': 'ISS'
+        };
+    </script>
+    <!-- INJECT_HOOKS -->
+    <!-- WBS Phase 3: Hooks -->
+    <script type="text/babel" src="hooks/useWbsApi.js"></script>
+
+    <!-- INJECT_CONTEXTS -->
+
+    <!-- INJECT_APP -->
+
+    <!-- ==================== 外部組件引入 ==================== -->
+    <!-- Phase 1: 系統管理介面 -->
+    <script type="text/babel" src="js/components/SettingsView.js"></script>
+    <!-- Phase 7: 週報功能 -->
+    <script type="text/babel" src="js/components/ReportModal.js"></script>
+
+    <!-- WBS Phase 3: WBS View -->
+    <script type="text/babel" src="js/components/TaskTreeNode.js"></script>
+    <script type="text/babel" src="js/components/ImportWBSModal.js"></script>
+    <script type="text/babel" src="js/components/WBSView.js"></script>
+
+    <!-- ==================== 應用啟動 ==================== -->
+    <script type="text/babel">
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+</body>
+
+</html>
