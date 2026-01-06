@@ -94,6 +94,14 @@ function apiDispatcher(action, payload = {}) {
       case 'deleteOwner':
         return deleteOwner(payload);
       
+      // WBS operations
+      case 'getTaskTree':
+        return getTaskTree(payload);
+      case 'updateTaskParent':
+        return updateTaskParent(payload);
+      case 'batchUpdateTasks':
+        return batchUpdateTasks(payload);
+      
       default:
         return { success: false, error: `Unknown action: ${action}` };
     }
@@ -843,5 +851,145 @@ function parseUserDate(dateStr) {
     return new Date(dateStr);
   } catch (e) {
     return '';
+  }
+}
+
+// ==================== WBS Functions ====================
+
+/**
+ * Get task tree structure for WBS view
+ * @param {Object} payload - { project: string (optional) }
+ * @returns {Object} { success: boolean, data: { tree: [], independent: [] } }
+ */
+function getTaskTree(payload = {}) {
+  try {
+    const allTasks = getAllTasks();
+    const projectFilter = payload.project;
+    
+    // Filter by project if specified
+    let tasks = projectFilter && projectFilter !== '全部專案'
+      ? allTasks.filter(t => t.project === projectFilter)
+      : allTasks;
+    
+    // Build tree structure
+    const taskMap = new Map();
+    tasks.forEach(t => taskMap.set(String(t.id), { ...t, children: [] }));
+    
+    const tree = [];
+    const independent = [];
+    
+    tasks.forEach(task => {
+      const node = taskMap.get(String(task.id));
+      const parentId = task.parentId || task.parent_id;
+      
+      if (parentId && taskMap.has(String(parentId))) {
+        // Has parent - add as child
+        taskMap.get(String(parentId)).children.push(node);
+      } else if (parentId) {
+        // Parent not found in current filter - treat as independent
+        independent.push(node);
+      } else {
+        // No parent - root level
+        tree.push(node);
+      }
+    });
+    
+    // Sort by sortOrder if available
+    const sortNodes = (nodes) => {
+      nodes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      nodes.forEach(n => {
+        if (n.children && n.children.length > 0) {
+          sortNodes(n.children);
+        }
+      });
+    };
+    
+    sortNodes(tree);
+    sortNodes(independent);
+    
+    return { 
+      success: true, 
+      data: { tree, independent },
+      count: tasks.length
+    };
+  } catch (error) {
+    Logger.log(`❌ getTaskTree error: ${error}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Update task parent relationship
+ * @param {Object} payload - { taskId, newParentId, sortOrder }
+ */
+function updateTaskParent(payload) {
+  try {
+    const { taskId, newParentId, sortOrder } = payload;
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      return { success: false, error: 'Tasks sheet not found' };
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    const parentIdCol = headers.indexOf('Parent_ID');
+    const sortOrderCol = headers.indexOf('Sort_Order');
+    const idCol = 0;
+    
+    // Find the task row
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idCol]) === String(taskId)) {
+        if (parentIdCol >= 0) {
+          sheet.getRange(i + 1, parentIdCol + 1).setValue(newParentId || '');
+        }
+        if (sortOrderCol >= 0 && sortOrder !== undefined) {
+          sheet.getRange(i + 1, sortOrderCol + 1).setValue(sortOrder);
+        }
+        
+        return { success: true, message: 'Parent updated successfully' };
+      }
+    }
+    
+    return { success: false, error: `Task ${taskId} not found` };
+  } catch (error) {
+    Logger.log(`❌ updateTaskParent error: ${error}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Batch update multiple tasks
+ * @param {Object} payload - { tasks: [{ id, ...fields }] }
+ */
+function batchUpdateTasks(payload) {
+  try {
+    const { tasks } = payload;
+    if (!tasks || !Array.isArray(tasks)) {
+      return { success: false, error: 'Invalid tasks array' };
+    }
+    
+    let updated = 0;
+    let errors = [];
+    
+    tasks.forEach(task => {
+      try {
+        upsertTask(task);
+        updated++;
+      } catch (e) {
+        errors.push(`Task ${task.id}: ${e.message}`);
+      }
+    });
+    
+    return { 
+      success: errors.length === 0, 
+      message: `Updated ${updated} tasks`,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  } catch (error) {
+    Logger.log(`❌ batchUpdateTasks error: ${error}`);
+    return { success: false, error: error.toString() };
   }
 }
