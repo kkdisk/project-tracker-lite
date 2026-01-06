@@ -103,6 +103,8 @@ function apiDispatcher(action, payload = {}) {
         return batchUpdateTasks(payload);
       case 'parseMarkdownWBS':
         return parseMarkdownWBS(payload);
+      case 'importWBSTasks':
+        return importWBSTasks(payload);
       
       default:
         return { success: false, error: `Unknown action: ${action}` };
@@ -1026,7 +1028,7 @@ function parseMarkdownWBS(payload) {
         currentEpic = {
           id: `E${taskId++}`,
           task: name,
-          nodeType: 'Epic',
+          nodeType: 'epic',
           level: 0,
           children: []
         };
@@ -1040,7 +1042,7 @@ function parseMarkdownWBS(payload) {
         currentStory = {
           id: `S${taskId++}`,
           task: name,
-          nodeType: 'Story',
+          nodeType: 'story',
           level: 1,
           parentId: currentEpic ? currentEpic.id : null,
           children: []
@@ -1106,7 +1108,7 @@ function parseMarkdownWBS(payload) {
         const taskNode = {
           id: `T${taskId++}`,
           task: taskText.trim(),
-          nodeType: 'Task',
+          nodeType: 'task',
           level: currentStory ? 2 : (currentEpic ? 1 : 0),
           owner: owner,
           startDate: startDate,
@@ -1137,6 +1139,89 @@ function parseMarkdownWBS(payload) {
     };
   } catch (error) {
     Logger.log(`❌ parseMarkdownWBS error: ${error}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Batch import WBS tasks
+ * @param {Object} payload - { tasks: array of parsed tasks from parseMarkdownWBS }
+ * @returns {Object} { success, created, message }
+ */
+function importWBSTasks(payload) {
+  try {
+    const { tasks } = payload;
+    if (!tasks || !Array.isArray(tasks)) {
+      return { success: false, error: 'Invalid tasks array' };
+    }
+    
+    Logger.log(`🔨 [importWBSTasks] Start - Tasks: ${tasks.length}`);
+    
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      return { success: false, error: 'Tasks sheet not found' };
+    }
+    
+    // Build tempId -> realId mapping for parent references
+    const idMap = {};
+    let createdCount = 0;
+    
+    // Sort by level to ensure parents are created before children
+    const sortedTasks = [...tasks].sort((a, b) => (a.level || 0) - (b.level || 0));
+    
+    sortedTasks.forEach(taskData => {
+      // Resolve parent ID
+      let realParentId = '';
+      if (taskData.parentId && idMap[taskData.parentId]) {
+        realParentId = idMap[taskData.parentId];
+      }
+      
+      // Generate new task ID
+      const team = taskData.team || 'PM';
+      const dueDate = taskData.date || new Date();
+      const newId = generateTaskId(team, dueDate);
+      
+      // Build task object
+      const newTask = {
+        id: newId,
+        task: taskData.task || '',
+        team: team,
+        project: taskData.project || '',
+        purpose: taskData.purpose || '',
+        owner: taskData.owner || '',
+        startDate: taskData.startDate || '',
+        date: taskData.date || '',
+        status: taskData.status || 'Todo',
+        priority: taskData.priority || 'Medium',
+        dependency: taskData.dependency || '',
+        notes: taskData.notes || '',
+        parentId: realParentId,
+        level: taskData.level || 0,
+        sortOrder: taskData.sortOrder || 0,
+        nodeType: taskData.nodeType || 'task'
+      };
+      
+      // Save to sheet
+      upsertTask(newTask);
+      
+      // Map tempId to realId
+      if (taskData.tempId) {
+        idMap[taskData.tempId] = newId;
+      }
+      
+      createdCount++;
+    });
+    
+    Logger.log(`✅ [importWBSTasks] Created ${createdCount} tasks`);
+    
+    return {
+      success: true,
+      created: createdCount,
+      message: `成功匯入 ${createdCount} 個任務`
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ importWBSTasks error: ${error}`);
     return { success: false, error: error.toString() };
   }
 }
